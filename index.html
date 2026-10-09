@@ -3,651 +3,548 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pathfinding Visualizer over TomTom Maps</title>
+    <title>TomTom Map - A* Pathfinding</title>
     
+    <!-- Tailwind CSS for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- TomTom Maps SDK -->
     <link rel="stylesheet" type="text/css" href="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps.css">
     <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps-web.min.js"></script>
+    
+    <!-- Font Awesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #0f172a; /* fallback dark background */
+        }
         
-        body { font-family: 'Inter', sans-serif; overflow: hidden; }
-        
-        /* Grid Overlay Styling */
-        #grid-container {
+        /* CRITICAL: The map container must have explicit dimensions */
+        #map-container {
             position: absolute;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 10; /* Above map */
-            display: grid;
-            pointer-events: auto; /* Catch drawing events */
-            background-color: transparent;
-        }
-
-        .grid-node {
-            width: 100%;
-            height: 100%;
-            border-right: 1px solid rgba(255, 255, 255, 0.1);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            transition: border 0.2s ease, transform 0.2s ease;
-            user-select: none;
-        }
-        
-        /* Make left and top borders visible on the grid itself */
-        #grid-container {
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-            border-left: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        /* Node States */
-        .node-start {
-            background-color: #22c55e !important;
-            border-radius: 4px;
-            transform: scale(0.9);
-            cursor: grab;
-            box-shadow: 0 0 10px rgba(34, 197, 94, 0.8);
-            z-index: 20;
-        }
-
-        .node-target {
-            background-color: #ef4444 !important;
-            border-radius: 4px;
-            transform: scale(0.9);
-            cursor: grab;
-            box-shadow: 0 0 10px rgba(239, 68, 68, 0.8);
-            z-index: 20;
-        }
-
-        .node-wall {
-            background-color: rgba(30, 41, 59, 0.95) !important;
-            border: 1px solid rgba(15, 23, 42, 1);
-            animation: wallPop 0.3s ease-out forwards;
-        }
-
-        /* Animations */
-        @keyframes wallPop {
-            0% { transform: scale(0.3); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
-        }
-
-        .node-visited {
-            animation: visitedAnimation 1.5s ease-out forwards;
-        }
-
-        @keyframes visitedAnimation {
-            0% { transform: scale(0.3); background-color: rgba(0, 0, 66, 0.75); border-radius: 100%; }
-            50% { background-color: rgba(17, 104, 217, 0.75); }
-            100% { transform: scale(1); background-color: rgba(0, 190, 218, 0.5); }
-        }
-
-        .node-path {
-            animation: pathAnimation 0.5s ease-out forwards;
-        }
-
-        @keyframes pathAnimation {
-            0% { transform: scale(0.6); background-color: rgba(255, 254, 106, 0.8); border-radius: 50%;}
-            50% { transform: scale(1.2); background-color: rgba(255, 254, 106, 0.9); border-radius: 0;}
-            100% { transform: scale(1); background-color: rgba(253, 224, 71, 0.8); border: none; }
+            width: 100vw;
+            height: 100vh;
+            min-height: 600px; /* Requested requirement */
+            z-index: 1;
+            background-color: #1e293b; 
         }
 
         /* Glassmorphism Panel */
-        .glass-panel {
-            background: rgba(15, 23, 42, 0.85);
+        .control-panel {
+            background: rgba(15, 23, 42, 0.9);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 50;
         }
 
-        /* Custom Scrollbar for map if needed */
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #1e293b; }
-        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        /* Custom Markers */
+        .marker-start {
+            background-color: #10b981;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.8);
+            transform: translate(-50%, -50%);
+        }
+        
+        .marker-target {
+            background-color: #ef4444;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.8);
+            transform: translate(-50%, -50%);
+        }
     </style>
 </head>
-<body class="bg-slate-900 text-slate-100 h-screen w-screen flex flex-col">
+<body class="text-slate-100">
 
-    <header class="glass-panel w-full p-4 flex flex-col md:flex-row items-center justify-between z-50 shadow-lg relative">
-        <div class="flex items-center gap-3 mb-4 md:mb-0">
-            <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-lg">
-                <i class="fa-solid fa-route text-white text-xl"></i>
+    <!-- The Map Container -->
+    <div id="map-container"></div>
+
+    <!-- UI Overlay -->
+    <div class="absolute top-4 left-4 w-96 max-w-[calc(100vw-2rem)] control-panel rounded-xl shadow-2xl p-5 flex flex-col gap-4">
+        
+        <div class="flex items-center gap-3 border-b border-slate-700 pb-4">
+            <div class="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg">
+                <i class="fa-solid fa-map-location-dot text-white text-xl"></i>
             </div>
             <div>
-                <h1 class="text-xl font-bold tracking-tight text-white">GeoSearch Visualizer</h1>
-                <p class="text-xs text-slate-400">Map & Algorithms integrated</p>
+                <h1 class="text-lg font-bold text-white leading-tight">TomTom A* Mapper</h1>
+                <p class="text-xs text-slate-400">Pathfinding Visualization</p>
             </div>
         </div>
 
-        <div class="flex flex-wrap items-center justify-center gap-4">
-            <div class="flex items-center gap-2 bg-slate-800 p-1 rounded-lg border border-slate-700">
-                <button id="mode-draw" class="px-3 py-1.5 rounded-md bg-indigo-600 text-white text-sm font-medium transition-colors">
-                    <i class="fa-solid fa-pen mr-1"></i> Draw / Edit
-                </button>
-                <button id="mode-pan" class="px-3 py-1.5 rounded-md hover:bg-slate-700 text-slate-300 text-sm font-medium transition-colors">
-                    <i class="fa-solid fa-arrows-up-down-left-right mr-1"></i> Pan Map
-                </button>
-            </div>
-
-            <select id="algo-select" class="bg-slate-800 border border-slate-700 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 outline-none transition-all">
-                <option value="astar">A* Search (A-Star)</option>
-                <option value="dijkstra">Dijkstra's Algorithm</option>
-                <option value="bfs">Breadth-First Search (BFS)</option>
-            </select>
-
-            <button id="visualize-btn" class="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-bold py-2.5 px-6 rounded-lg shadow-lg shadow-emerald-500/30 transition-all transform hover:-translate-y-0.5">
-                <i class="fa-solid fa-play mr-2"></i> Visualize!
+        <!-- Initialization Section -->
+        <div id="init-section" class="flex flex-col gap-3">
+            <label class="text-sm font-medium text-slate-300">Enter TomTom API Key:</label>
+            <input type="text" id="api-key" placeholder="Your API Key..." 
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors">
+            <button id="load-map-btn" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 px-4 rounded-lg transition-colors text-sm shadow-lg shadow-blue-500/20">
+                <i class="fa-solid fa-spinner fa-spin hidden mr-2" id="loading-spinner"></i>Load Map
             </button>
-            
-            <div class="h-8 w-px bg-slate-700 hidden md:block"></div>
-
-            <button id="clear-path-btn" class="text-slate-300 hover:text-white hover:bg-slate-800 px-3 py-2 rounded-lg text-sm transition-colors">
-                Clear Path
-            </button>
-            <button id="clear-board-btn" class="text-red-400 hover:text-red-300 hover:bg-slate-800 px-3 py-2 rounded-lg text-sm transition-colors">
-                Clear All
-            </button>
+            <p class="text-xs text-slate-500 text-center"><a href="https://developer.tomtom.com/" target="_blank" class="underline hover:text-blue-400">Get an API key</a></p>
         </div>
-    </header>
 
-    <main class="relative flex-grow w-full overflow-hidden bg-slate-900">
-        <!-- TomTom Map Container -->
-        <div id="map" class="absolute top-0 left-0 w-full h-full z-0 opacity-50 transition-opacity duration-1000"></div>
-        
-        <!-- Interactive Grid Overlay -->
-        <div id="grid-container"></div>
-        
-        <!-- Legend Overlay -->
-        <div class="absolute bottom-6 left-6 glass-panel p-4 rounded-xl z-50 border border-slate-700/50 flex flex-col gap-2">
-            <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Legend</h3>
-            <div class="flex items-center gap-2 text-sm"><div class="w-4 h-4 bg-green-500 rounded-sm"></div> Start Node</div>
-            <div class="flex items-center gap-2 text-sm"><div class="w-4 h-4 bg-red-500 rounded-sm"></div> Target Node</div>
-            <div class="flex items-center gap-2 text-sm"><div class="w-4 h-4 bg-slate-800 border border-slate-900 rounded-sm"></div> Wall (Obstacle)</div>
-            <div class="flex items-center gap-2 text-sm"><div class="w-4 h-4 bg-cyan-400/50 rounded-sm"></div> Visited</div>
-            <div class="flex items-center gap-2 text-sm"><div class="w-4 h-4 bg-yellow-400/80 rounded-sm"></div> Shortest Path</div>
+        <!-- Controls Section (Hidden until map loads) -->
+        <div id="controls-section" class="hidden flex-col gap-3">
+            <div class="bg-slate-800 rounded-lg p-3 border border-slate-700">
+                <p class="text-sm text-slate-300 font-medium mb-2">Instructions:</p>
+                <ol class="text-xs text-slate-400 list-decimal ml-4 space-y-1">
+                    <li>Click map to set <strong class="text-emerald-400">Start</strong>.</li>
+                    <li>Click map to set <strong class="text-red-400">Target</strong>.</li>
+                    <li>Click Run to visualize A*.</li>
+                </ol>
+            </div>
+
+            <div class="flex gap-2">
+                <button id="run-algo-btn" disabled class="flex-1 bg-emerald-600 disabled:bg-slate-700 disabled:text-slate-500 hover:bg-emerald-500 text-white font-medium py-2 px-4 rounded-lg transition-colors text-sm">
+                    Run A* Algorithm
+                </button>
+                <button id="clear-btn" class="bg-slate-700 hover:bg-slate-600 text-white font-medium py-2 px-4 rounded-lg transition-colors text-sm">
+                    Clear
+                </button>
+            </div>
         </div>
-    </main>
 
-    <!-- API Key Modal -->
-    <div id="api-modal" class="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-        <div class="bg-slate-800 rounded-2xl border border-slate-700 p-8 max-w-md w-full shadow-2xl relative overflow-hidden">
-            <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-500"></div>
-            <h2 class="text-2xl font-bold text-white mb-2">Welcome to GeoSearch</h2>
-            <p class="text-slate-400 text-sm mb-6">Visualize algorithms overlaid onto live map data. Enter your TomTom Maps Web SDK API key to initialize the map background.</p>
-            
-            <div class="mb-4">
-                <label for="api-key" class="block text-sm font-medium text-slate-300 mb-2">TomTom API Key</label>
-                <input type="text" id="api-key" placeholder="Enter your key here..." class="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors">
-            </div>
-            
-            <div class="flex gap-3 mt-8">
-                <button id="load-map-btn" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-medium py-3 px-4 rounded-lg transition-colors">
-                    Load Map
-                </button>
-                <button id="skip-map-btn" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-medium py-3 px-4 rounded-lg transition-colors">
-                    Skip (Grid Only)
-                </button>
-            </div>
-            
-            <div class="mt-4 text-center">
-                <a href="https://developer.tomtom.com/user/register" target="_blank" class="text-xs text-blue-400 hover:text-blue-300 transition-colors">Don't have a key? Get one here.</a>
-            </div>
+        <!-- Status Message Box -->
+        <div id="status-box" class="bg-slate-900 border border-slate-700 rounded-lg p-3 text-xs text-slate-400 font-mono">
+            Status: Waiting for API Key...
         </div>
     </div>
 
     <script>
         // --- State Variables ---
-        const CELL_SIZE = 30; // 30px per cell
-        let gridContainer = document.getElementById('grid-container');
-        let rows = 0;
-        let cols = 0;
-        let grid = [];
+        let map = null;
+        let startPoint = null; // { lng, lat }
+        let targetPoint = null; // { lng, lat }
+        let startMarker = null;
+        let targetMarker = null;
         
-        let startNode = { r: 0, c: 0 };
-        let targetNode = { r: 0, c: 0 };
+        let gridNodes = []; // The virtual grid for A*
+        let obstacles = []; // Random obstacles generated between points
         
-        let isDrawing = false;
-        let isMovingStart = false;
-        let isMovingTarget = false;
-        let isVisualizing = false;
-        
-        let mapInstance = null;
-        let isMapMode = false;
-
-        // --- Initialization ---
-        window.onload = () => {
-            calculateGridDimensions();
-            setDefaultNodes();
-            createGridDOM();
+        // --- UI Elements ---
+        const ui = {
+            apiKeyInput: document.getElementById('api-key'),
+            loadMapBtn: document.getElementById('load-map-btn'),
+            spinner: document.getElementById('loading-spinner'),
+            initSection: document.getElementById('init-section'),
+            controlsSection: document.getElementById('controls-section'),
+            statusBox: document.getElementById('status-box'),
+            runAlgoBtn: document.getElementById('run-algo-btn'),
+            clearBtn: document.getElementById('clear-btn')
         };
 
-        window.addEventListener('resize', () => {
-            if(!isVisualizing) {
-                calculateGridDimensions();
-                setDefaultNodes();
-                createGridDOM();
-            }
-        });
-
-        document.getElementById('load-map-btn').addEventListener('click', () => {
-            const apiKey = document.getElementById('api-key').value.trim();
-            if(apiKey) {
-                initTomTomMap(apiKey);
-                closeModal();
-            } else {
-                alert("Please enter a valid API Key or click Skip.");
-            }
-        });
-
-        document.getElementById('skip-map-btn').addEventListener('click', () => {
-            closeModal();
-            document.getElementById('map').style.display = 'none'; // Grid only
-        });
-
-        function closeModal() {
-            document.getElementById('api-modal').classList.add('opacity-0', 'pointer-events-none');
-            setTimeout(() => document.getElementById('api-modal').style.display = 'none', 300);
+        function updateStatus(msg, type = 'info') {
+            ui.statusBox.textContent = `> ${msg}`;
+            if (type === 'error') ui.statusBox.className = 'bg-red-900/50 border border-red-700 rounded-lg p-3 text-xs text-red-200 font-mono';
+            else if (type === 'success') ui.statusBox.className = 'bg-emerald-900/50 border border-emerald-700 rounded-lg p-3 text-xs text-emerald-200 font-mono';
+            else ui.statusBox.className = 'bg-slate-900 border border-slate-700 rounded-lg p-3 text-xs text-slate-400 font-mono';
         }
 
-        function initTomTomMap(apiKey) {
+        // --- Map Initialization ---
+        ui.loadMapBtn.addEventListener('click', () => {
+            const key = ui.apiKeyInput.value.trim();
+            if (!key) {
+                updateStatus("Error: API Key is required.", "error");
+                return;
+            }
+
+            ui.loadMapBtn.disabled = true;
+            ui.spinner.classList.remove('hidden');
+            updateStatus("Initializing map...");
+
             try {
-                mapInstance = tt.map({
-                    key: apiKey,
-                    container: 'map',
+                // Initialize TomTom Map
+                map = tt.map({
+                    key: key,
+                    container: 'map-container',
                     center: [-74.0060, 40.7128], // Default to NYC
-                    zoom: 14,
+                    zoom: 12,
                     style: 'tomtom://vector/1/basic-main'
                 });
-                
-                mapInstance.on('load', () => {
-                    document.getElementById('map').classList.remove('opacity-50');
-                    document.getElementById('map').classList.add('opacity-100');
-                    // Disable map interactions initially (Draw mode is default)
-                    mapInstance.dragPan.disable();
-                    mapInstance.scrollZoom.disable();
-                    mapInstance.doubleClickZoom.disable();
+
+                map.on('load', () => {
+                    ui.spinner.classList.add('hidden');
+                    ui.initSection.classList.add('hidden');
+                    ui.controlsSection.classList.remove('hidden');
+                    ui.controlsSection.classList.add('flex');
+                    updateStatus("Map loaded successfully. Click to set start point.", "success");
+                    
+                    setupMapLayers();
+                    setupMapInteractions();
                 });
-            } catch (error) {
-                console.error("Map initialization failed:", error);
-                alert("Failed to initialize map. Please check your API key.");
-            }
-        }
 
-        document.getElementById('mode-draw').addEventListener('click', function() {
-            isMapMode = false;
-            this.classList.replace('bg-slate-800', 'bg-indigo-600');
-            this.classList.replace('text-slate-300', 'text-white');
-            this.classList.remove('hover:bg-slate-700');
-            
-            let panBtn = document.getElementById('mode-pan');
-            panBtn.classList.replace('bg-indigo-600', 'bg-slate-800');
-            panBtn.classList.replace('text-white', 'text-slate-300');
-            panBtn.classList.add('hover:bg-slate-700');
+                map.on('error', (err) => {
+                    console.error("TomTom Map Error:", err);
+                    updateStatus("Map failed to load. Check API Key or Console.", "error");
+                    ui.loadMapBtn.disabled = false;
+                    ui.spinner.classList.add('hidden');
+                });
 
-            gridContainer.style.pointerEvents = 'auto'; // Enable grid interactions
-            
-            if(mapInstance) {
-                mapInstance.dragPan.disable();
-                mapInstance.scrollZoom.disable();
+            } catch (err) {
+                console.error(err);
+                updateStatus("Critical Error initializing SDK.", "error");
+                ui.loadMapBtn.disabled = false;
+                ui.spinner.classList.add('hidden');
             }
         });
 
-        document.getElementById('mode-pan').addEventListener('click', function() {
-            isMapMode = true;
-            this.classList.replace('bg-slate-800', 'bg-indigo-600');
-            this.classList.replace('text-slate-300', 'text-white');
-            this.classList.remove('hover:bg-slate-700');
-            
-            let drawBtn = document.getElementById('mode-draw');
-            drawBtn.classList.replace('bg-indigo-600', 'bg-slate-800');
-            drawBtn.classList.replace('text-white', 'text-slate-300');
-            drawBtn.classList.add('hover:bg-slate-700');
-
-            gridContainer.style.pointerEvents = 'none'; // Pass clicks to map
-            
-            if(mapInstance) {
-                mapInstance.dragPan.enable();
-                mapInstance.scrollZoom.enable();
-            }
-        });
-
-        function calculateGridDimensions() {
-            const width = gridContainer.clientWidth;
-            const height = gridContainer.clientHeight;
-            rows = Math.floor(height / CELL_SIZE);
-            cols = Math.floor(width / CELL_SIZE);
-        }
-
-        function setDefaultNodes() {
-            startNode = { r: Math.floor(rows / 2), c: Math.floor(cols / 4) };
-            targetNode = { r: Math.floor(rows / 2), c: Math.floor(cols * 0.75) };
-        }
-
-        function createGridDOM() {
-            gridContainer.innerHTML = '';
-            gridContainer.style.gridTemplateColumns = `repeat(${cols}, ${CELL_SIZE}px)`;
-            gridContainer.style.gridTemplateRows = `repeat(${rows}, ${CELL_SIZE}px)`;
-            grid = [];
-
-            for (let r = 0; r < rows; r++) {
-                let currentRow = [];
-                for (let c = 0; c < cols; c++) {
-                    const isStart = (r === startNode.r && c === startNode.c);
-                    const isTarget = (r === targetNode.r && c === targetNode.c);
-                    
-                    const nodeData = {
-                        r, c,
-                        isStart, isTarget, isWall: false,
-                        isVisited: false, previousNode: null,
-                        g: Infinity, h: 0, f: Infinity
-                    };
-                    currentRow.push(nodeData);
-
-                    const el = document.createElement('div');
-                    el.id = `node-${r}-${c}`;
-                    el.className = 'grid-node' + (isStart ? ' node-start' : '') + (isTarget ? ' node-target' : '');
-                    
-                    // Mouse Events
-                    el.addEventListener('mousedown', (e) => handleMouseDown(e, r, c));
-                    el.addEventListener('mouseenter', () => handleMouseEnter(r, c));
-                    el.addEventListener('mouseup', handleMouseUp);
-                    
-                    gridContainer.appendChild(el);
+        function setupMapLayers() {
+            // Source & Layer for Obstacles (Walls)
+            map.addSource('obstacles-source', {
+                'type': 'geojson',
+                'data': { 'type': 'FeatureCollection', 'features': [] }
+            });
+            map.addLayer({
+                'id': 'obstacles-layer',
+                'type': 'fill',
+                'source': 'obstacles-source',
+                'paint': {
+                    'fill-color': '#1e293b',
+                    'fill-opacity': 0.8,
+                    'fill-outline-color': '#000000'
                 }
-                grid.push(currentRow);
-            }
+            });
+
+            // Source & Layer for Visited Nodes (Visualization)
+            map.addSource('visited-source', {
+                'type': 'geojson',
+                'data': { 'type': 'FeatureCollection', 'features': [] }
+            });
+            map.addLayer({
+                'id': 'visited-layer',
+                'type': 'circle',
+                'source': 'visited-source',
+                'paint': {
+                    'circle-color': '#38bdf8',
+                    'circle-radius': 6,
+                    'circle-opacity': 0.6
+                }
+            });
+
+            // Source & Layer for Final Path
+            map.addSource('path-source', {
+                'type': 'geojson',
+                'data': { 'type': 'Feature', 'geometry': { 'type': 'LineString', 'coordinates': [] } }
+            });
+            map.addLayer({
+                'id': 'path-layer',
+                'type': 'line',
+                'source': 'path-source',
+                'layout': {
+                    'line-cap': 'round',
+                    'line-join': 'round'
+                },
+                'paint': {
+                    'line-color': '#fde047',
+                    'line-width': 6,
+                    'line-opacity': 0.9
+                }
+            });
         }
 
-        function handleMouseDown(e, r, c) {
-            if(isMapMode || isVisualizing) return;
-            e.preventDefault(); // Prevent text selection
+        function setupMapInteractions() {
+            map.on('click', (e) => {
+                const lngLat = e.lngLat;
+                
+                if (!startPoint) {
+                    startPoint = lngLat;
+                    const el = document.createElement('div');
+                    el.className = 'marker-start';
+                    startMarker = new tt.Marker({ element: el }).setLngLat(startPoint).addTo(map);
+                    updateStatus("Start point set. Click to set target.");
+                } else if (!targetPoint) {
+                    targetPoint = lngLat;
+                    const el = document.createElement('div');
+                    el.className = 'marker-target';
+                    targetMarker = new tt.Marker({ element: el }).setLngLat(targetPoint).addTo(map);
+                    updateStatus("Target set. Ready to run A*.");
+                    ui.runAlgoBtn.disabled = false;
+                }
+            });
+        }
+
+        ui.clearBtn.addEventListener('click', clearMap);
+
+        function clearMap() {
+            if (startMarker) startMarker.remove();
+            if (targetMarker) targetMarker.remove();
+            startPoint = null;
+            targetPoint = null;
+            startMarker = null;
+            targetMarker = null;
+            gridNodes = [];
             
-            if(r === startNode.r && c === startNode.c) {
-                isMovingStart = true;
-            } else if (r === targetNode.r && c === targetNode.c) {
-                isMovingTarget = true;
-            } else {
-                isDrawing = true;
-                toggleWall(r, c);
+            // Reset GeoJSON sources
+            if (map.getSource('visited-source')) {
+                map.getSource('visited-source').setData({ 'type': 'FeatureCollection', 'features': [] });
+                map.getSource('path-source').setData({ 'type': 'Feature', 'geometry': { 'type': 'LineString', 'coordinates': [] } });
+                map.getSource('obstacles-source').setData({ 'type': 'FeatureCollection', 'features': [] });
             }
-        }
-
-        function handleMouseEnter(r, c) {
-            if(isMapMode || isVisualizing) return;
             
-            if (isMovingStart) {
-                moveNode('start', r, c);
-            } else if (isMovingTarget) {
-                moveNode('target', r, c);
-            } else if (isDrawing) {
-                toggleWall(r, c);
+            ui.runAlgoBtn.disabled = true;
+            updateStatus("Cleared. Click map to set start point.", "info");
+        }
+
+        function generateVirtualGrid(cols, rows) {
+            // Find bounds encompassing start and target with padding
+            const minLng = Math.min(startPoint.lng, targetPoint.lng);
+            const maxLng = Math.max(startPoint.lng, targetPoint.lng);
+            const minLat = Math.min(startPoint.lat, targetPoint.lat);
+            const maxLat = Math.max(startPoint.lat, targetPoint.lat);
+
+            // Add 30% padding to bounds
+            const lngPad = (maxLng - minLng) * 0.3 || 0.01;
+            const latPad = (maxLat - minLat) * 0.3 || 0.01;
+            
+            const bMinLng = minLng - lngPad;
+            const bMaxLng = maxLng + lngPad;
+            const bMinLat = minLat - latPad;
+            const bMaxLat = maxLat + latPad;
+
+            const lngStep = (bMaxLng - bMinLng) / cols;
+            const latStep = (bMaxLat - bMinLat) / rows;
+
+            let grid = [];
+            for (let x = 0; x < cols; x++) {
+                grid[x] = [];
+                for (let y = 0; y < rows; y++) {
+                    const cLng = bMinLng + (x * lngStep) + (lngStep / 2);
+                    const cLat = bMinLat + (y * latStep) + (latStep / 2);
+                    
+                    // Create obstacles (roughly 25% chance, but ensuring start/target areas are relatively clear)
+                    let isWall = Math.random() < 0.25;
+                    
+                    grid[x][y] = {
+                        x, y,
+                        lng: cLng,
+                        lat: cLat,
+                        lngStep, latStep,
+                        g: Infinity,
+                        h: 0,
+                        f: Infinity,
+                        parent: null,
+                        isWall: isWall
+                    };
+                }
             }
+            return grid;
         }
 
-        function handleMouseUp() {
-            isDrawing = false;
-            isMovingStart = false;
-            isMovingTarget = false;
-        }
-        
-        // Global mouseup to catch releases outside grid
-        document.addEventListener('mouseup', handleMouseUp);
-
-        function toggleWall(r, c) {
-            if((r === startNode.r && c === startNode.c) || (r === targetNode.r && c === targetNode.c)) return;
-            let node = grid[r][c];
-            node.isWall = !node.isWall;
-            let el = document.getElementById(`node-${r}-${c}`);
-            if(node.isWall) {
-                el.classList.add('node-wall');
-            } else {
-                el.classList.remove('node-wall');
+        function getClosestNode(lngLat, grid, cols, rows) {
+            let closest = null;
+            let minDist = Infinity;
+            for(let x = 0; x < cols; x++) {
+                for(let y = 0; y < rows; y++) {
+                    const node = grid[x][y];
+                    // Euclidean distance approximation for assigning grid node
+                    const dist = Math.pow(node.lng - lngLat.lng, 2) + Math.pow(node.lat - lngLat.lat, 2);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        closest = node;
+                    }
+                }
             }
+            if(closest) closest.isWall = false; // Ensure start/target are not walls
+            return closest;
         }
 
-        function moveNode(type, r, c) {
-            if (grid[r][c].isWall) return; // Don't allow dropping on wall
-            if (type === 'start' && r === targetNode.r && c === targetNode.c) return;
-            if (type === 'target' && r === startNode.r && c === startNode.c) return;
-
-            let prevR = type === 'start' ? startNode.r : targetNode.r;
-            let prevC = type === 'start' ? startNode.c : targetNode.c;
-
-            // Update State
-            grid[prevR][prevC][type === 'start' ? 'isStart' : 'isTarget'] = false;
-            grid[r][c][type === 'start' ? 'isStart' : 'isTarget'] = true;
-
-            // Update DOM
-            document.getElementById(`node-${prevR}-${prevC}`).classList.remove(`node-${type}`);
-            document.getElementById(`node-${r}-${c}`).classList.add(`node-${type}`);
-
-            if(type === 'start') startNode = {r, c};
-            else targetNode = {r, c};
-        }
-
-        function getNeighbors(node) {
-            const neighbors = [];
-            const { r, c } = node;
-            if (r > 0) neighbors.push(grid[r - 1][c]); // Up
-            if (r < rows - 1) neighbors.push(grid[r + 1][c]); // Down
-            if (c > 0) neighbors.push(grid[r][c - 1]); // Left
-            if (c < cols - 1) neighbors.push(grid[r][c + 1]); // Right
-            return neighbors.filter(n => !n.isWall);
+        function drawObstacles(grid, cols, rows) {
+            let features = [];
+            for (let x = 0; x < cols; x++) {
+                for (let y = 0; y < rows; y++) {
+                    const node = grid[x][y];
+                    if (node.isWall) {
+                        // Create a small polygon for the obstacle
+                        const halfW = node.lngStep / 2.2; // slight gap
+                        const halfH = node.latStep / 2.2;
+                        features.push({
+                            'type': 'Feature',
+                            'geometry': {
+                                'type': 'Polygon',
+                                'coordinates': [[
+                                    [node.lng - halfW, node.lat - halfH],
+                                    [node.lng + halfW, node.lat - halfH],
+                                    [node.lng + halfW, node.lat + halfH],
+                                    [node.lng - halfW, node.lat + halfH],
+                                    [node.lng - halfW, node.lat - halfH]
+                                ]]
+                            }
+                        });
+                    }
+                }
+            }
+            map.getSource('obstacles-source').setData({
+                'type': 'FeatureCollection',
+                'features': features
+            });
         }
 
         function heuristic(nodeA, nodeB) {
-            // Manhattan distance
-            return Math.abs(nodeA.r - nodeB.r) + Math.abs(nodeA.c - nodeB.c);
+            // Manhattan distance on grid
+            return Math.abs(nodeA.x - nodeB.x) + Math.abs(nodeA.y - nodeB.y);
         }
 
-        function astar() {
-            let start = grid[startNode.r][startNode.c];
-            let target = grid[targetNode.r][targetNode.c];
-            let openSet = [start];
-            let visitedNodes = [];
+        ui.runAlgoBtn.addEventListener('click', () => {
+            if (!startPoint || !targetPoint) return;
             
-            start.g = 0;
-            start.f = heuristic(start, target);
+            ui.runAlgoBtn.disabled = true;
+            ui.clearBtn.disabled = true;
+            updateStatus("Generating Grid & Running A*...");
+
+            const COLS = 40;
+            const ROWS = 40;
+            const grid = generateVirtualGrid(COLS, ROWS);
+            
+            let startNode = getClosestNode(startPoint, grid, COLS, ROWS);
+            let targetNode = getClosestNode(targetPoint, grid, COLS, ROWS);
+            
+            // Clear space around start and target to prevent immediate lock-in
+            for(let dx=-1; dx<=1; dx++) {
+                for(let dy=-1; dy<=1; dy++) {
+                    if(grid[startNode.x+dx] && grid[startNode.x+dx][startNode.y+dy]) grid[startNode.x+dx][startNode.y+dy].isWall = false;
+                    if(grid[targetNode.x+dx] && grid[targetNode.x+dx][targetNode.y+dy]) grid[targetNode.x+dx][targetNode.y+dy].isWall = false;
+                }
+            }
+
+            drawObstacles(grid, COLS, ROWS);
+
+            // A* Execution
+            let openSet = [startNode];
+            let closedSet = new Set();
+            startNode.g = 0;
+            startNode.f = heuristic(startNode, targetNode);
+            
+            let visitedInOrder = [];
+            let pathFound = false;
 
             while (openSet.length > 0) {
-                // Sort to act as priority queue
+                // Get node with lowest F score
                 openSet.sort((a, b) => a.f - b.f);
                 let current = openSet.shift();
-                
-                if (current.isWall) continue;
 
-                if (!current.isStart && !current.isTarget) {
-                     current.isVisited = true;
+                visitedInOrder.push(current);
+
+                if (current === targetNode) {
+                    pathFound = true;
+                    break;
                 }
-                visitedNodes.push(current);
 
-                if (current === target) return visitedNodes;
+                closedSet.add(`${current.x},${current.y}`);
 
-                let neighbors = getNeighbors(current);
-                for (let neighbor of neighbors) {
-                    if (neighbor.isVisited || neighbor.isWall) continue;
+                // Get Neighbors (Up, Down, Left, Right)
+                const dirs = [[0,1], [1,0], [0,-1], [-1,0]];
+                for (let dir of dirs) {
+                    const nx = current.x + dir[0];
+                    const ny = current.y + dir[1];
+
+                    if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) continue;
                     
-                    let tentative_g = current.g + 1;
+                    let neighbor = grid[nx][ny];
+                    if (neighbor.isWall || closedSet.has(`${nx},${ny}`)) continue;
+
+                    let tentativeG = current.g + 1;
                     
-                    let inOpenSet = openSet.includes(neighbor);
-                    if (!inOpenSet || tentative_g < neighbor.g) {
-                        neighbor.previousNode = current;
-                        neighbor.g = tentative_g;
-                        neighbor.h = heuristic(neighbor, target);
+                    let inOpen = openSet.includes(neighbor);
+                    if (!inOpen || tentativeG < neighbor.g) {
+                        neighbor.g = tentativeG;
+                        neighbor.h = heuristic(neighbor, targetNode);
                         neighbor.f = neighbor.g + neighbor.h;
+                        neighbor.parent = current;
                         
-                        if (!inOpenSet) openSet.push(neighbor);
+                        if (!inOpen) openSet.push(neighbor);
                     }
                 }
             }
-            return visitedNodes; // Path not found
-        }
 
-        function dijkstra() {
-            // Dijkstra is essentially A* without heuristic (h=0) for unweighted graphs
-            let start = grid[startNode.r][startNode.c];
-            let target = grid[targetNode.r][targetNode.c];
-            let unvisitedNodes = [];
-            let visitedNodes = [];
+            let path = [];
+            if (pathFound) {
+                let curr = targetNode;
+                while (curr) {
+                    path.unshift(curr);
+                    curr = curr.parent;
+                }
+            }
+
+            animateVisualization(visitedInOrder, path);
+        });
+
+        function animateVisualization(visitedNodes, path) {
+            let visitedFeatures = [];
+            let index = 0;
             
-            start.g = 0;
+            updateStatus("Visualizing algorithm search...");
 
-            for(let r=0; r<rows; r++) {
-                for(let c=0; c<cols; c++) {
-                    unvisitedNodes.push(grid[r][c]);
-                }
-            }
-
-            while (!!unvisitedNodes.length) {
-                unvisitedNodes.sort((a, b) => a.g - b.g);
-                let closestNode = unvisitedNodes.shift();
-                
-                if (closestNode.isWall) continue;
-                if (closestNode.g === Infinity) return visitedNodes; // Stuck
-                
-                closestNode.isVisited = true;
-                visitedNodes.push(closestNode);
-                
-                if (closestNode === target) return visitedNodes;
-                
-                let neighbors = getNeighbors(closestNode);
-                for(let neighbor of neighbors) {
-                    if(neighbor.isVisited || neighbor.isWall) continue;
-                    let alt = closestNode.g + 1;
-                    if(alt < neighbor.g) {
-                        neighbor.g = alt;
-                        neighbor.previousNode = closestNode;
+            function drawNextBatch() {
+                // Draw 5 nodes per frame for faster visualization
+                for (let i = 0; i < 5; i++) {
+                    if (index >= visitedNodes.length) {
+                        finishAnimation(path);
+                        return;
                     }
+                    const node = visitedNodes[index];
+                    visitedFeatures.push({
+                        'type': 'Feature',
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [node.lng, node.lat]
+                        }
+                    });
+                    index++;
                 }
+
+                map.getSource('visited-source').setData({
+                    'type': 'FeatureCollection',
+                    'features': visitedFeatures
+                });
+
+                requestAnimationFrame(drawNextBatch);
             }
-            return visitedNodes;
+
+            requestAnimationFrame(drawNextBatch);
         }
 
-        function bfs() {
-            let start = grid[startNode.r][startNode.c];
-            let target = grid[targetNode.r][targetNode.c];
-            let queue = [start];
-            let visitedNodes = [];
-            start.isVisited = true;
-
-            while (queue.length > 0) {
-                let current = queue.shift();
-                visitedNodes.push(current);
-
-                if (current === target) return visitedNodes;
-
-                let neighbors = getNeighbors(current);
-                for (let neighbor of neighbors) {
-                    if (!neighbor.isVisited && !neighbor.isWall) {
-                        neighbor.isVisited = true;
-                        neighbor.previousNode = current;
-                        queue.push(neighbor);
-                    }
-                }
-            }
-            return visitedNodes;
-        }
-
-        function getShortestPath(target) {
-            const path = [];
-            let current = target;
-            while (current !== null) {
-                path.unshift(current);
-                current = current.previousNode;
-            }
-            // If path length is 1, it means it's just the start node, no path found.
-            return path.length > 1 ? path : [];
-        }
-
-        function animateAlgorithm(visitedNodesInOrder, nodesInShortestPathOrder) {
-            for (let i = 0; i <= visitedNodesInOrder.length; i++) {
-                if (i === visitedNodesInOrder.length) {
-                    setTimeout(() => {
-                        animatePath(nodesInShortestPathOrder);
-                    }, 10 * i);
-                    return;
-                }
-                setTimeout(() => {
-                    const node = visitedNodesInOrder[i];
-                    if (!node.isStart && !node.isTarget) {
-                        document.getElementById(`node-${node.r}-${node.c}`).classList.add('node-visited');
-                    }
-                }, 10 * i); // 10ms delay per node for visualization speed
-            }
-        }
-
-        function animatePath(nodesInShortestPathOrder) {
-            if(nodesInShortestPathOrder.length === 0) {
-                isVisualizing = false;
-                alert("No path found!");
+        function finishAnimation(path) {
+            if (path.length === 0) {
+                updateStatus("No path found! Surrounded by obstacles.", "error");
+                ui.clearBtn.disabled = false;
                 return;
             }
+
+            updateStatus("Path found! Drawing shortest route...", "success");
             
-            for (let i = 0; i < nodesInShortestPathOrder.length; i++) {
-                setTimeout(() => {
-                    const node = nodesInShortestPathOrder[i];
-                    if (!node.isStart && !node.isTarget) {
-                        let el = document.getElementById(`node-${node.r}-${node.c}`);
-                        el.classList.remove('node-visited'); // Clear generic visited animation
-                        // Trigger reflow to restart animation reliably if needed, though adding new class is fine
-                        void el.offsetWidth; 
-                        el.classList.add('node-path');
-                    }
-                    if(i === nodesInShortestPathOrder.length - 1) {
-                         isVisualizing = false;
-                    }
-                }, 50 * i); // Slower animation for the final path
-            }
-        }
+            // Re-interpolate path coordinates to perfectly match original Start/Target markers 
+            // rather than grid cell centers at the ends.
+            let lineCoords = path.map(node => [node.lng, node.lat]);
+            lineCoords[0] = [startPoint.lng, startPoint.lat];
+            lineCoords[lineCoords.length - 1] = [targetPoint.lng, targetPoint.lat];
 
-        // --- UI Button Handlers ---
-        document.getElementById('visualize-btn').addEventListener('click', () => {
-            if (isVisualizing) return;
-            clearPathData(); // Reset path/visited visual states without touching walls
-            
-            isVisualizing = true;
-            const algoChoice = document.getElementById('algo-select').value;
-            let visitedNodes = [];
-            
-            if (algoChoice === 'astar') visitedNodes = astar();
-            else if (algoChoice === 'dijkstra') visitedNodes = dijkstra();
-            else if (algoChoice === 'bfs') visitedNodes = bfs();
-
-            let target = grid[targetNode.r][targetNode.c];
-            const shortestPath = getShortestPath(target);
-            
-            animateAlgorithm(visitedNodes, shortestPath);
-        });
-
-        document.getElementById('clear-path-btn').addEventListener('click', () => {
-            if (isVisualizing) return;
-            clearPathData();
-        });
-
-        document.getElementById('clear-board-btn').addEventListener('click', () => {
-            if (isVisualizing) return;
-            createGridDOM(); // Completely resets the board to initial setup
-        });
-
-        function clearPathData() {
-            for (let r = 0; r < rows; r++) {
-                for (let c = 0; c < cols; c++) {
-                    let node = grid[r][c];
-                    node.isVisited = false;
-                    node.previousNode = null;
-                    node.g = Infinity;
-                    node.h = 0;
-                    node.f = Infinity;
-                    
-                    let el = document.getElementById(`node-${r}-${c}`);
-                    el.classList.remove('node-visited');
-                    el.classList.remove('node-path');
+            map.getSource('path-source').setData({
+                'type': 'Feature',
+                'geometry': {
+                    'type': 'LineString',
+                    'coordinates': lineCoords
                 }
-            }
+            });
+
+            ui.clearBtn.disabled = false;
         }
+
     </script>
 </body>
 </html>
